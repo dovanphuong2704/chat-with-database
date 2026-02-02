@@ -1,10 +1,10 @@
 product_id,sku,product_name,category,unit_price,active,created_at
-1,SKU-1001,Wireless Mouse,Electronics,19.99,true,2026-01-30T09:15:37.135023+00:00
-2,SKU-1002,Mechanical Keyboard,Electronics,79.00,true,2026-01-30T09:15:37.135023+00:00
-3,SKU-1003,USB-C Hub,Electronics,34.50,true,2026-01-30T09:15:37.135023+00:00
-4,SKU-2001,Notebook A5,Stationery,4.25,true,2026-01-30T09:15:37.135023+00:00
-5,SKU-2002,Pen Set,Stationery,9.90,true,2026-01-30T09:15:37.135023+00:00
-6,SKU-3001,Coffee Beans 1kg,Grocery,24.00,true,2026-01-30T09:15:37.135023+00:00
-7,SKU-3002,Green Tea 200g,Grocery,12.50,true,2026-01-30T09:15:37.135023+00:00
-8,SKU-4001,T-Shirt,Apparel,18.00,true,2026-01-30T09:15:37.135023+00:00
-9,SKU-4002,Hoodie,Apparel,45.00,true,2026-01-30T09:15:37.135023+00:00
+1,SKU-1001,Wireless Mouse,Electronics,19.99,true,2026-01-30T13:18:19.340985+00:00
+2,SKU-1002,Mechanical Keyboard,Electronics,79.00,true,2026-01-30T13:18:19.340985+00:00
+3,SKU-1003,USB-C Hub,Electronics,34.50,true,2026-01-30T13:18:19.340985+00:00
+4,SKU-2001,Notebook A5,Stationery,4.25,true,2026-01-30T13:18:19.340985+00:00
+5,SKU-2002,Pen Set,Stationery,9.90,true,2026-01-30T13:18:19.340985+00:00
+6,SKU-3001,Coffee Beans 1kg,Grocery,24.00,true,2026-01-30T13:18:19.340985+00:00
+7,SKU-3002,Green Tea 200g,Grocery,12.50,true,2026-01-30T13:18:19.340985+00:00
+8,SKU-4001,T-Shirt,Apparel,18.00,true,2026-01-30T13:18:19.340985+00:00
+9,SKU-4002,Hoodie,Apparel,45.00,true,2026-01-30T13:18:19.340985+00:00
