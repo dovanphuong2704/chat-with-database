@@ -212,7 +212,9 @@ if not st.session_state.messages:
             "Khi tạo biểu đồ, hãy sử dụng thư viện Altair. "
             "Tạo đối tượng biểu đồ và gán cho biến 'chart'. Đặt chiều rộng là 600px. "
             "Dữ liệu nằm trong dataframe pandas tên là 'df'. KHÔNG tạo dữ liệu mẫu. "
-            "Nếu cần thư viện khác, hãy giải thích bằng tiếng Việt rằng nó không khả dụng. "
+            "QUAN TRỌNG: KHÔNG ĐƯỢC viết mã Python trực tiếp vào tin nhắn phản hồi. "
+            "Bạn CHỈ ĐƯỢC phép tạo biểu đồ thông qua công cụ 'create_chart'. "
+            "Nếu bạn viết mã Python vào tin nhắn thay vì dùng công cụ, người dùng sẽ không thấy biểu đồ. "
             f"Cấu trúc database hiện tại:\n{st.session_state.db_schema}"
         )
     }
@@ -235,10 +237,25 @@ for message in st.session_state.messages:
         if message.get("content"):
             st.markdown(message["content"])
         
-        # Display SQL query if present
+        # Display SQL query if present in history
         if "sql_query" in message:
             with st.expander("⚒️ Truy vấn SQL"):
                 st.code(message["sql_query"], language="sql")
+        
+        # Display Dataframe from history
+        if "data" in message:
+            st.dataframe(pd.DataFrame(message["data"]), use_container_width=True)
+            
+        # Display Chart from history
+        if "chart_code" in message:
+            try:
+                executor = SafeishPythonExecutor(safe_globals={"alt": alt, "pd": pd})
+                df = pd.DataFrame(message.get("data", []))
+                res = executor.run(message["chart_code"], context={"df": df}, return_locals=True)
+                if res.ok and res.locals.get("chart"):
+                    st.altair_chart(res.locals.get("chart"), use_container_width=True)
+            except Exception:
+                pass
 
 # Chat input
 if prompt := st.chat_input("Hỏi tôi bất cứ điều gì về dữ liệu..."):
@@ -254,58 +271,61 @@ if prompt := st.chat_input("Hỏi tôi bất cứ điều gì về dữ liệu..
         message_placeholder.markdown("🤔 Đang suy nghĩ...")
         
         try:
-            # Call OpenAI API
-            response = st.session_state.openai_client.chat.completions.create(
-                model=model,
-                messages=st.session_state.messages,
-                tools=tools,
-                tool_choice="auto"
-            )
-            
-            response_message = response.choices[0].message
-            assistant_message = {"role": "assistant", "content": response_message.content or ""}
-            
-            # Handle tool calls
-            if response_message.tool_calls:
-                # IMPORTANT: Add assistant message with tool_calls FIRST
-                # This is required by OpenAI API before adding tool responses
-                st.session_state.messages.append({
-                    "role": "assistant",
-                    "content": response_message.content,
-                    "tool_calls": [
-                        {
-                            "id": tc.id,
-                            "type": "function",
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments
-                            }
-                        } for tc in response_message.tool_calls
-                    ]
-                })
+            # Loop to handle sequential tool calls
+            while True:
+                response = st.session_state.openai_client.chat.completions.create(
+                    model=model,
+                    messages=st.session_state.messages,
+                    tools=tools,
+                    tool_choice="auto"
+                )
                 
-                # Now process each tool call
+                response_message = response.choices[0].message
+                
+                # If there are no tool calls, this is the final response
+                if not response_message.tool_calls:
+                    assistant_content = response_message.content or ""
+                    message_placeholder.markdown(assistant_content)
+                    
+                    # Create the final assistant message for history
+                    final_assistant_msg = {"role": "assistant", "content": assistant_content}
+                    
+                    # Transfer metadata from session state (captured during tool execution)
+                    if "current_sql" in st.session_state:
+                        final_assistant_msg["sql_query"] = st.session_state.current_sql
+                    if "current_data" in st.session_state:
+                        final_assistant_msg["data"] = st.session_state.current_data
+                    if "current_chart" in st.session_state:
+                        final_assistant_msg["chart_code"] = st.session_state.current_chart
+                        
+                    st.session_state.messages.append(final_assistant_msg)
+                    
+                    # Clean up temporary storage
+                    for key in ["current_sql", "current_data", "current_chart"]:
+                        if key in st.session_state: del st.session_state[key]
+                    break
+                
+                # Process tool calls
+                # First, add the assistant's request to tool calls to the history (OpenAI requirement)
+                st.session_state.messages.append(response_message)
+                
                 for tool_call in response_message.tool_calls:
                     function_name = tool_call.function.name
                     function_args = eval(tool_call.function.arguments)
                     
                     if function_name == "query_database":
                         sql_query = function_args["sql"]
-                        
-                        # Show SQL query
                         with st.expander("⚒️ Truy vấn SQL"):
                             st.code(sql_query, language="sql")
                         
-                        # Execute query
                         result_text = query_database(sql_query)
                         
-                        # Show dataframe (but don't store in message - causes serialization error)
                         if "last_df" in st.session_state:
-                            st.dataframe(st.session_state.last_df, use_container_width=True)
-                            # Store SQL query for display later
-                            assistant_message["sql_query"] = sql_query
+                            df = st.session_state.last_df
+                            st.dataframe(df, use_container_width=True)
+                            st.session_state.current_sql = sql_query
+                            st.session_state.current_data = df.to_dict('records')
                         
-                        # Add tool response to messages
                         st.session_state.messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
@@ -315,37 +335,18 @@ if prompt := st.chat_input("Hỏi tôi bất cứ điều gì về dữ liệu..
                     
                     elif function_name == "create_chart":
                         python_code = function_args["python_code"]
-                        
-                        # Execute chart code
                         result_text = create_chart(python_code)
                         
-                        # Show chart (but don't store in message - causes serialization error)
                         if "last_chart" in st.session_state:
                             st.altair_chart(st.session_state.last_chart, use_container_width=True)
+                            st.session_state.current_chart = python_code
                         
-                        # Add tool response to messages
                         st.session_state.messages.append({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "name": function_name,
                             "content": result_text
                         })
-                
-                # Get final response after tool calls
-                final_response = st.session_state.openai_client.chat.completions.create(
-                    model=model,
-                    messages=st.session_state.messages
-                )
-                
-                final_message = final_response.choices[0].message.content
-                assistant_message["content"] = final_message
-                message_placeholder.markdown(final_message)
-            else:
-                # No tool calls, just display response
-                message_placeholder.markdown(response_message.content)
-            
-            # Add assistant message to history
-            st.session_state.messages.append(assistant_message)
             
         except Exception as e:
             st.error(f"Error: {str(e)}")
