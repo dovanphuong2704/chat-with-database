@@ -24,8 +24,10 @@ share/python-wheels/
 *.egg-info/
 .installed.cfg
 *.egg
-postgresql/env*
-postgresql/.env*
+postgresql/env
+!postgresql/env.example
+postgresql/.env
+
 MANIFEST
 
 # PyInstaller

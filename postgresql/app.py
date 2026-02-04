@@ -153,8 +153,12 @@ st.title("AI Data Intelligence Platform")
 st.markdown("Khai thác sức mạnh dữ liệu của bạn thông qua ngôn ngữ tự nhiên. Hệ thống sẽ tự động phân tích và trực quan hóa kết quả cho bạn.")
 
 # Check prerequisites
-if not st.session_state.openai_client:
+if not api_key_input:
     st.warning("Warning: Please configure API key in sidebar.")
+    st.stop()
+
+if not model:
+    st.warning("Warning: Please fetch and select a model in sidebar.")
     st.stop()
 
 if not st.session_state.db_client:
@@ -326,83 +330,258 @@ if prompt := st.chat_input("Hỏi tôi bất cứ điều gì về dữ liệu..
         message_placeholder.markdown("Processing query...")
         
         try:
-            # Loop to handle sequential tool calls
-            while True:
-                response = st.session_state.openai_client.chat.completions.create(
-                    model=model,
-                    messages=st.session_state.messages,
-                    tools=tools,
-                    tool_choice="auto"
+            if provider == "Gemini":
+                import google.generativeai as genai
+                genai.configure(api_key=api_key_input)
+                
+                # Setup Gemini tools
+                # We need to wrap our local functions for Gemini
+                def query_db_wrapper(sql: str):
+                    return query_database(sql)
+                
+                def create_chart_wrapper(python_code: str):
+                    return create_chart(python_code)
+
+                gemini_model = genai.GenerativeModel(
+                    model_name=model,
+                    tools=[query_db_wrapper, create_chart_wrapper]
                 )
                 
-                response_message = response.choices[0].message
+                # Convert history to Gemini format
+                gemini_history = []
+                for msg in st.session_state.messages[:-1]:
+                    role = "user" if msg["role"] == "user" else "model"
+                    gemini_history.append({"role": role, "parts": [{"text": msg["content"] or ""}]})
                 
-                # If there are no tool calls, this is the final response
-                if not response_message.tool_calls:
-                    assistant_content = response_message.content or ""
-                    message_placeholder.markdown(assistant_content)
-                    
-                    # Create the final assistant message for history
-                    final_assistant_msg = {"role": "assistant", "content": assistant_content}
-                    
-                    # Transfer metadata from session state (captured during tool execution)
-                    if "current_sql" in st.session_state:
-                        final_assistant_msg["sql_query"] = st.session_state.current_sql
-                    if "current_data" in st.session_state:
-                        final_assistant_msg["data"] = st.session_state.current_data
-                    if "current_chart" in st.session_state:
-                        final_assistant_msg["chart_code"] = st.session_state.current_chart
+                chat = gemini_model.start_chat(history=gemini_history)
+                response = chat.send_message(prompt)
+                
+                # Final content to display
+                final_text = ""
+                
+                # Process parts for tool calls
+                for part in response.candidates[0].content.parts:
+                    if fn := part.function_call:
+                        function_name = fn.name
+                        function_args = dict(fn.args)
                         
-                    st.session_state.messages.append(final_assistant_msg)
-                    
-                    # Clean up temporary storage
-                    for key in ["current_sql", "current_data", "current_chart"]:
-                        if key in st.session_state: del st.session_state[key]
-                    break
+                        if function_name == "query_db_wrapper":
+                            sql_query = function_args["sql"]
+                            with st.expander("Executed SQL"):
+                                st.code(sql_query, language="sql")
+                            
+                            result = query_database(sql_query)
+                            
+                            if "last_df" in st.session_state:
+                                df = st.session_state.last_df
+                                st.dataframe(df, use_container_width=True)
+                                st.session_state.current_sql = sql_query
+                                st.session_state.current_data = df.to_dict('records')
+                            
+                            response = chat.send_message(
+                                genai.types.Content(
+                                    parts=[genai.types.FunctionResponse(name=function_name, response={'result': result})]
+                                )
+                            )
+                        elif function_name == "create_chart_wrapper":
+                            python_code = function_args["python_code"]
+                            result = create_chart(python_code)
+                            
+                            if "last_chart" in st.session_state:
+                                st.altair_chart(st.session_state.last_chart, use_container_width=True)
+                                st.session_state.current_chart = python_code
+                                
+                            response = chat.send_message(
+                                genai.types.Content(
+                                    parts=[genai.types.FunctionResponse(name=function_name, response={'result': result})]
+                                )
+                            )
                 
-                # Process tool calls
-                # First, add the assistant's request to tool calls to the history (OpenAI requirement)
-                st.session_state.messages.append(response_message)
+                final_text = response.text
+                message_placeholder.markdown(final_text)
                 
-                for tool_call in response_message.tool_calls:
-                    function_name = tool_call.function.name
-                    function_args = eval(tool_call.function.arguments)
+                # Save to history
+                final_assistant_msg = {"role": "assistant", "content": final_text}
+                if "current_sql" in st.session_state: final_assistant_msg["sql_query"] = st.session_state.current_sql
+                if "current_data" in st.session_state: final_assistant_msg["data"] = st.session_state.current_data
+                if "current_chart" in st.session_state: final_assistant_msg["chart_code"] = st.session_state.current_chart
+                st.session_state.messages.append(final_assistant_msg)
+                
+                # Clean up
+            elif provider == "Claude (Anthropic)":
+                import anthropic
+                anthropic_client = anthropic.Anthropic(api_key=api_key_input)
+                
+                # Convert messages to Claude format
+                claude_messages = []
+                system_prompt = "You are a data assistant. You can query a PostgreSQL database and create charts."
+                for msg in st.session_state.messages[:-1]:
+                    if msg["role"] == "user":
+                        claude_messages.append({"role": "user", "content": msg["content"]})
+                    elif msg["role"] == "assistant":
+                        claude_messages.append({"role": "assistant", "content": msg["content"]})
+
+                # Define tools for Claude
+                claude_tools = [
+                    {
+                        "name": "query_database",
+                        "description": "Query the PostgreSQL database",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {
+                                "sql": {"type": "string", "description": "The SQL query to run"}
+                            },
+                            "required": ["sql"]
+                        }
+                    },
+                    {
+                        "name": "create_chart",
+                        "description": "Create an Altair chart from the data",
+                        "input_schema": {
+                            "type": "object",
+                            "properties": {
+                                "python_code": {"type": "string", "description": "The Python code for the chart"}
+                            },
+                            "required": ["python_code"]
+                        }
+                    }
+                ]
+
+                # Initial request to Claude
+                response = anthropic_client.messages.create(
+                    model=model,
+                    max_tokens=4096,
+                    system=system_prompt,
+                    messages=claude_messages,
+                    tools=claude_tools
+                )
+
+                while response.stop_reason == "tool_use":
+                    # Handle tool calls
+                    tool_use = next(block for block in response.content if block.type == "tool_use")
+                    tool_name = tool_use.name
+                    tool_input = tool_use.input
                     
-                    if function_name == "query_database":
-                        sql_query = function_args["sql"]
+                    if tool_name == "query_database":
+                        sql_query = tool_input["sql"]
                         with st.expander("Executed SQL"):
                             st.code(sql_query, language="sql")
-                        
-                        result_text = query_database(sql_query)
+                        result = query_database(sql_query)
                         
                         if "last_df" in st.session_state:
                             df = st.session_state.last_df
                             st.dataframe(df, use_container_width=True)
                             st.session_state.current_sql = sql_query
                             st.session_state.current_data = df.to_dict('records')
-                        
-                        st.session_state.messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": function_name,
-                            "content": result_text
-                        })
-                    
-                    elif function_name == "create_chart":
-                        python_code = function_args["python_code"]
-                        result_text = create_chart(python_code)
-                        
+                            
+                        tool_result_content = result
+                    elif tool_name == "create_chart":
+                        python_code = tool_input["python_code"]
+                        result = create_chart(python_code)
                         if "last_chart" in st.session_state:
                             st.altair_chart(st.session_state.last_chart, use_container_width=True)
                             st.session_state.current_chart = python_code
+                        tool_result_content = result
+
+                    # Send tool result back
+                    claude_messages.append({"role": "assistant", "content": response.content})
+                    claude_messages.append({
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": tool_use.id,
+                                "content": tool_result_content,
+                            }
+                        ],
+                    })
+                    
+                    response = anthropic_client.messages.create(
+                        model=model,
+                        max_tokens=4096,
+                        system=system_prompt,
+                        messages=claude_messages,
+                        tools=claude_tools
+                    )
+
+                final_text = response.content[0].text
+                message_placeholder.markdown(final_text)
+                
+                final_assistant_msg = {"role": "assistant", "content": final_text}
+                if "current_sql" in st.session_state: final_assistant_msg["sql_query"] = st.session_state.current_sql
+                if "current_data" in st.session_state: final_assistant_msg["data"] = st.session_state.current_data
+                if "current_chart" in st.session_state: final_assistant_msg["chart_code"] = st.session_state.current_chart
+                st.session_state.messages.append(final_assistant_msg)
+                
+                for key in ["current_sql", "current_data", "current_chart"]:
+                    if key in st.session_state: del st.session_state[key]
+
+            else:
+                # OpenAI / Grok Logic
+                while True:
+                    response = st.session_state.openai_client.chat.completions.create(
+                        model=model,
+                        messages=st.session_state.messages,
+                        tools=tools,
+                        tool_choice="auto"
+                    )
+                    
+                    response_message = response.choices[0].message
+                    
+                    if not response_message.tool_calls:
+                        assistant_content = response_message.content or ""
+                        message_placeholder.markdown(assistant_content)
                         
-                        st.session_state.messages.append({
-                            "role": "tool",
-                            "tool_call_id": tool_call.id,
-                            "name": function_name,
-                            "content": result_text
-                        })
-            
+                        final_assistant_msg = {"role": "assistant", "content": assistant_content}
+                        if "current_sql" in st.session_state: final_assistant_msg["sql_query"] = st.session_state.current_sql
+                        if "current_data" in st.session_state: final_assistant_msg["data"] = st.session_state.current_data
+                        if "current_chart" in st.session_state: final_assistant_msg["chart_code"] = st.session_state.current_chart
+                        st.session_state.messages.append(final_assistant_msg)
+                        
+                        for key in ["current_sql", "current_data", "current_chart"]:
+                            if key in st.session_state: del st.session_state[key]
+                        break
+                    
+                    st.session_state.messages.append(response_message)
+                    
+                    for tool_call in response_message.tool_calls:
+                        function_name = tool_call.function.name
+                        function_args = json.loads(tool_call.function.arguments)
+                        
+                        if function_name == "query_database":
+                            sql_query = function_args["sql"]
+                            with st.expander("Executed SQL"):
+                                st.code(sql_query, language="sql")
+                            
+                            result_text = query_database(sql_query)
+                            
+                            if "last_df" in st.session_state:
+                                df = st.session_state.last_df
+                                st.dataframe(df, use_container_width=True)
+                                st.session_state.current_sql = sql_query
+                                st.session_state.current_data = df.to_dict('records')
+                            
+                            st.session_state.messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": function_name,
+                                "content": result_text
+                            })
+                        
+                        elif function_name == "create_chart":
+                            python_code = function_args["python_code"]
+                            result_text = create_chart(python_code)
+                            
+                            if "last_chart" in st.session_state:
+                                st.altair_chart(st.session_state.last_chart, use_container_width=True)
+                                st.session_state.current_chart = python_code
+                            
+                            st.session_state.messages.append({
+                                "role": "tool",
+                                "tool_call_id": tool_call.id,
+                                "name": function_name,
+                                "content": result_text
+                            })
         except Exception as e:
             st.error(f"Error: {str(e)}")
             message_placeholder.markdown(f"❌ Error: {str(e)}")
