@@ -14,7 +14,7 @@ load_dotenv("env")
 
 # Page config
 st.set_page_config(
-    page_title="Chat with PostgreSQL Database",
+    page_title="Trò chuyện với Cơ sở dữ liệu PostgreSQL",
     page_icon="🗄️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -35,16 +35,16 @@ if "openai_client" not in st.session_state:
         st.session_state.openai_client = None
 
 # Sidebar - Database Configuration
-st.sidebar.title("🗄️ Database Configuration")
+st.sidebar.title("🗄️ Cấu hình Cơ sở dữ liệu")
 
 with st.sidebar.form("db_config"):
     db_host = st.text_input("Host", value=os.getenv("DB_HOST", "localhost"))
-    db_port = st.text_input("Port", value=os.getenv("DB_PORT", "5432"))
-    db_name = st.text_input("Database", value=os.getenv("DB_DATABASE", ""))
-    db_user = st.text_input("Username", value=os.getenv("DB_USER", ""))
-    db_password = st.text_input("Password", value=os.getenv("DB_PASSWORD", ""), type="password")
+    db_port = st.text_input("Cổng (Port)", value=os.getenv("DB_PORT", "5432"))
+    db_name = st.text_input("Tên Database", value=os.getenv("DB_DATABASE", ""))
+    db_user = st.text_input("Tên đăng nhập", value=os.getenv("DB_USER", ""))
+    db_password = st.text_input("Mật khẩu", value=os.getenv("DB_PASSWORD", ""), type="password")
     
-    connect_button = st.form_submit_button("🔌 Connect to Database")
+    connect_button = st.form_submit_button("🔌 Kết nối Database")
 
 if connect_button:
     try:
@@ -59,15 +59,15 @@ if connect_button:
         st.session_state.db_client = DatabaseClient()
         st.session_state.db_schema = st.session_state.db_client.get_schema_summary()
         
-        st.sidebar.success("✅ Connected successfully!")
+        st.sidebar.success("✅ Kết nối thành công!")
     except Exception as e:
-        st.sidebar.error(f"❌ Connection failed: {str(e)}")
+        st.sidebar.error(f"❌ Kết nối thất bại: {str(e)}")
         st.session_state.db_client = None
         st.session_state.db_schema = None
 
 # Show database schema if connected
 if st.session_state.db_schema:
-    with st.sidebar.expander("📋 Database Schema", expanded=False):
+    with st.sidebar.expander("📋 Cấu trúc Database", expanded=False):
         st.text(st.session_state.db_schema)
 
 # OpenAI API Key configuration
@@ -94,16 +94,16 @@ model = st.sidebar.selectbox(
 )
 
 # Main area
-st.title("💬 Chat with Your PostgreSQL Database")
-st.markdown("Ask questions about your database in natural language!")
+st.title("💬 Chat với Database PostgreSQL")
+st.markdown("Đặt câu hỏi về dữ liệu của bạn bằng ngôn ngữ tự nhiên!")
 
 # Check prerequisites
 if not st.session_state.openai_client:
-    st.warning("⚠️ Please configure your OpenAI API key in the sidebar.")
+    st.warning("⚠️ Vui lòng cấu hình OpenAI API key ở thanh bên.")
     st.stop()
 
 if not st.session_state.db_client:
-    st.info("ℹ️ Please connect to a database using the sidebar form.")
+    st.info("ℹ️ Vui lòng kết nối với database ở thanh bên.")
     st.stop()
 
 # Function definitions for OpenAI function calling
@@ -202,21 +202,18 @@ if not st.session_state.messages:
     system_message = {
         "role": "system",
         "content": (
-            "You are an SQL assistant connected directly to a PostgreSQL database. "
-            "You can execute SELECT queries on this database, "
-            "and your system will automatically run any SQL query you provide. "
-            "Always try to answer user questions by generating and executing an SQL query first, "
-            "even if you think you already know the answer logically. "
-            "Never assume the result — always verify it in the database. "
-            "Only if the question cannot possibly be answered with SQL, then ask for clarification. "
-            "Use SELECT statements only (no INSERT, UPDATE, DELETE). "
-            "When creating visualizations (such as charts, graphs, or plots), "
-            "use the Altair library for all visual outputs. "
-            "Create chart object with Altair and assign to variable 'chart'. Set width to 600px. "
-            "Data is in pandas dataframe called df - use df variable. DON'T create sample df variable. "
-            "If you think you need another library, do not attempt to import it — "
-            "simply explain that it is not available. "
-            f"Database schema:\n{st.session_state.db_schema}"
+            "Bạn là một trợ lý SQL chuyên nghiệp, kết nối trực tiếp với cơ sở dữ liệu PostgreSQL. "
+            "Bạn phải phản hồi người dùng bằng TIẾNG VIỆT một cách tự nhiên và lịch sự. "
+            "Nhiệm vụ của bạn là thực thi các câu lệnh SELECT trên cơ sở dữ liệu này để trả lời các câu hỏi. "
+            "Hãy luôn cố gắng trả lời bằng cách tạo và chạy truy vấn SQL trước, ngay cả khi bạn nghĩ rằng mình đã biết câu trả lời. "
+            "Không bao giờ giả định kết quả — luôn xác minh trong database. "
+            "Nếu câu hỏi không thể trả lời bằng SQL, hãy yêu cầu làm rõ bằng tiếng Việt. "
+            "Chỉ sử dụng câu lệnh SELECT (không dùng INSERT, UPDATE, DELETE). "
+            "Khi tạo biểu đồ, hãy sử dụng thư viện Altair. "
+            "Tạo đối tượng biểu đồ và gán cho biến 'chart'. Đặt chiều rộng là 600px. "
+            "Dữ liệu nằm trong dataframe pandas tên là 'df'. KHÔNG tạo dữ liệu mẫu. "
+            "Nếu cần thư viện khác, hãy giải thích bằng tiếng Việt rằng nó không khả dụng. "
+            f"Cấu trúc database hiện tại:\n{st.session_state.db_schema}"
         )
     }
     st.session_state.messages.append(system_message)
@@ -240,11 +237,11 @@ for message in st.session_state.messages:
         
         # Display SQL query if present
         if "sql_query" in message:
-            with st.expander("⚒️ SQL Query"):
+            with st.expander("⚒️ Truy vấn SQL"):
                 st.code(message["sql_query"], language="sql")
 
 # Chat input
-if prompt := st.chat_input("Ask a question about your database..."):
+if prompt := st.chat_input("Hỏi tôi bất cứ điều gì về dữ liệu..."):
     # Add user message
     st.session_state.messages.append({"role": "user", "content": prompt})
     
@@ -254,7 +251,7 @@ if prompt := st.chat_input("Ask a question about your database..."):
     # Get AI response
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
-        message_placeholder.markdown("🤔 Thinking...")
+        message_placeholder.markdown("🤔 Đang suy nghĩ...")
         
         try:
             # Call OpenAI API
@@ -296,7 +293,7 @@ if prompt := st.chat_input("Ask a question about your database..."):
                         sql_query = function_args["sql"]
                         
                         # Show SQL query
-                        with st.expander("⚒️ SQL Query"):
+                        with st.expander("⚒️ Truy vấn SQL"):
                             st.code(sql_query, language="sql")
                         
                         # Execute query
@@ -356,15 +353,15 @@ if prompt := st.chat_input("Ask a question about your database..."):
 
 # Sidebar footer
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 💡 Tips")
+st.sidebar.markdown("### 💡 Mẹo nhỏ")
 st.sidebar.markdown("""
-- Ask questions in natural language
-- Request charts and visualizations
-- The AI will generate SQL queries automatically
-- All queries are read-only for safety
+- Đặt câu hỏi bằng tiếng Việt tự nhiên
+- Yêu cầu vẽ biểu đồ hoặc biểu diễn dữ liệu
+- AI sẽ tự động tạo mã SQL và truy vấn
+- Tất cả truy vấn đều là Read-only (chỉ đọc) để đảm bảo an toàn
 """)
 
 # Clear chat button
-if st.sidebar.button("🗑️ Clear Chat History"):
+if st.sidebar.button("🗑️ Xóa lịch sử trò chuyện"):
     st.session_state.messages = []
     st.rerun()
