@@ -1,6 +1,8 @@
-streamlit>=1.30.0
-openai>=1.0.0
-pandas>=2.0.0
-altair>=5.0.0
-psycopg[binary]>=3.1.0
-python-dotenv>=1.0.0
+streamlit
+pandas
+altair
+python-dotenv
+openai
+google-generativeai
+anthropic
+psycopg2-binary

@@ -14,8 +14,8 @@ load_dotenv("env")
 
 # Page config
 st.set_page_config(
-    page_title="Trò chuyện với Cơ sở dữ liệu PostgreSQL",
-    page_icon="🗄️",
+    page_title="Data Intelligence Platform",
+    page_icon="terminal",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -27,24 +27,53 @@ if "db_client" not in st.session_state:
     st.session_state.db_client = None
 if "db_schema" not in st.session_state:
     st.session_state.db_schema = None
+if "available_models" not in st.session_state:
+    st.session_state.available_models = [] # Start empty
 if "openai_client" not in st.session_state:
-    api_key = os.getenv("OPENAI_API_KEY")
-    if api_key:
-        st.session_state.openai_client = OpenAI(api_key=api_key)
-    else:
-        st.session_state.openai_client = None
+    st.session_state.openai_client = None
+
+# Helper function to fetch models based on provider
+def fetch_available_models(provider, api_key):
+    try:
+        if provider == "OpenAI" or provider == "Grok (xAI)":
+            # Grok is OpenAI compatible
+            base_url = "https://api.x.ai/v1" if provider == "Grok (xAI)" else None
+            temp_client = OpenAI(api_key=api_key, base_url=base_url)
+            models = temp_client.models.list()
+            # Filter for models that support tools (function calling)
+            model_list = []
+            for m in models:
+                mid = m.id.lower()
+                # Known tool-supporting models
+                if any(p in mid for p in ["gpt-4o", "gpt-4-turbo", "gpt-4-0", "gpt-3.5-turbo-0"]):
+                    model_list.append(m.id)
+                elif mid in ["gpt-4", "gpt-3.5-turbo"]:
+                    model_list.append(m.id)
+                elif "grok" in mid:
+                    model_list.append(m.id)
+            
+            return sorted(list(set(model_list)))
+        elif provider == "Gemini":
+            import google.generativeai as genai
+            genai.configure(api_key=api_key)
+            models = genai.list_models()
+            return sorted([m.name.replace('models/', '') for m in models if 'generateContent' in m.supported_generation_methods])
+        return []
+    except Exception as e:
+        st.sidebar.error(f"Error fetching models: {str(e)}")
+        return []
 
 # Sidebar - Database Configuration
-st.sidebar.title("🗄️ Cấu hình Cơ sở dữ liệu")
+st.sidebar.title("Configuration")
 
 with st.sidebar.form("db_config"):
     db_host = st.text_input("Host", value=os.getenv("DB_HOST", "localhost"))
-    db_port = st.text_input("Cổng (Port)", value=os.getenv("DB_PORT", "5432"))
-    db_name = st.text_input("Tên Database", value=os.getenv("DB_DATABASE", ""))
-    db_user = st.text_input("Tên đăng nhập", value=os.getenv("DB_USER", ""))
-    db_password = st.text_input("Mật khẩu", value=os.getenv("DB_PASSWORD", ""), type="password")
+    db_port = st.text_input("Port", value=os.getenv("DB_PORT", "5432"))
+    db_name = st.text_input("Database", value=os.getenv("DB_DATABASE", ""))
+    db_user = st.text_input("Username", value=os.getenv("DB_USER", ""))
+    db_password = st.text_input("Password", value=os.getenv("DB_PASSWORD", ""), type="password")
     
-    connect_button = st.form_submit_button("🔌 Kết nối Database")
+    connect_button = st.form_submit_button("Connect Database")
 
 if connect_button:
     try:
@@ -59,51 +88,77 @@ if connect_button:
         st.session_state.db_client = DatabaseClient()
         st.session_state.db_schema = st.session_state.db_client.get_schema_summary()
         
-        st.sidebar.success("✅ Kết nối thành công!")
+        st.sidebar.success("Thành công: Đã kết nối Database")
     except Exception as e:
-        st.sidebar.error(f"❌ Kết nối thất bại: {str(e)}")
+        st.sidebar.error(f"Lỗi: Kết nối thất bại: {str(e)}")
         st.session_state.db_client = None
         st.session_state.db_schema = None
 
 # Show database schema if connected
 if st.session_state.db_schema:
-    with st.sidebar.expander("📋 Cấu trúc Database", expanded=False):
+    with st.sidebar.expander("Schema Explorer", expanded=False):
         st.text(st.session_state.db_schema)
 
-# OpenAI API Key configuration
+# AI Provider Configuration
 st.sidebar.markdown("---")
-st.sidebar.title("🤖 OpenAI Configuration")
+st.sidebar.title("AI Engine")
+provider = st.sidebar.selectbox(
+    "Provider",
+    ["OpenAI", "Grok (xAI)", "Gemini", "Claude (Anthropic)"],
+    index=0
+)
 
 api_key_input = st.sidebar.text_input(
-    "API Key",
-    value=os.getenv("OPENAI_API_KEY", ""),
+    f"API Key {provider}",
+    value=os.getenv(f"{provider.upper().replace(' ', '_')}_API_KEY", ""),
     type="password",
-    help="Enter your OpenAI API key"
+    help=f"Nhập mã API Key của {provider}"
 )
 
-if api_key_input and api_key_input != os.getenv("OPENAI_API_KEY", ""):
-    st.session_state.openai_client = OpenAI(api_key=api_key_input)
-    st.sidebar.success("✅ API Key set!")
+# Fetch models button
+if st.sidebar.button("Lấy danh sách Model"):
+    if api_key_input:
+        with st.sidebar.status("Đang kết nối API...", expanded=False):
+            models = fetch_available_models(provider, api_key_input)
+            if models:
+                st.session_state.available_models = models
+                st.sidebar.success(f"Đã tải {len(models)} model")
+            else:
+                st.sidebar.warning("Không tìm thấy model hoặc có lỗi xảy ra")
+    else:
+        st.sidebar.error("Vui lòng nhập API Key trước")
 
-# Model selection
-model = st.sidebar.selectbox(
-    "Model",
-    ["gpt-5","gpt-4o-mini", "gpt-4o", "gpt-3.5-turbo"],
-    index=0,
-    help="Select OpenAI model to use"
-)
+# Model selection from dynamic list
+model = None
+if st.session_state.available_models:
+    model = st.sidebar.selectbox(
+        "Active Model",
+        st.session_state.available_models,
+        index=0
+    )
+else:
+    st.sidebar.info("Vui lòng tải danh sách model để tiếp tục")
+
+# Initialize Client based on provider
+if api_key_input:
+    if provider == "OpenAI" or provider == "Grok (xAI)":
+        base_url = "https://api.x.ai/v1" if provider == "Grok (xAI)" else None
+        st.session_state.openai_client = OpenAI(api_key=api_key_input, base_url=base_url)
+    # Note: Gemini/Claude initialization will be handled in the chat logic
+else:
+    st.session_state.openai_client = None
 
 # Main area
-st.title("💬 Chat với Database PostgreSQL")
-st.markdown("Đặt câu hỏi về dữ liệu của bạn bằng ngôn ngữ tự nhiên!")
+st.title("AI Data Intelligence Platform")
+st.markdown("Khai thác sức mạnh dữ liệu của bạn thông qua ngôn ngữ tự nhiên. Hệ thống sẽ tự động phân tích và trực quan hóa kết quả cho bạn.")
 
 # Check prerequisites
 if not st.session_state.openai_client:
-    st.warning("⚠️ Vui lòng cấu hình OpenAI API key ở thanh bên.")
+    st.warning("Warning: Please configure API key in sidebar.")
     st.stop()
 
 if not st.session_state.db_client:
-    st.info("ℹ️ Vui lòng kết nối với database ở thanh bên.")
+    st.info("Info: Please connect to database in sidebar.")
     st.stop()
 
 # Function definitions for OpenAI function calling
@@ -239,7 +294,7 @@ for message in st.session_state.messages:
         
         # Display SQL query if present in history
         if "sql_query" in message:
-            with st.expander("⚒️ Truy vấn SQL"):
+            with st.expander("SQL Query"):
                 st.code(message["sql_query"], language="sql")
         
         # Display Dataframe from history
@@ -268,7 +323,7 @@ if prompt := st.chat_input("Hỏi tôi bất cứ điều gì về dữ liệu..
     # Get AI response
     with st.chat_message("assistant"):
         message_placeholder = st.empty()
-        message_placeholder.markdown("🤔 Đang suy nghĩ...")
+        message_placeholder.markdown("Processing query...")
         
         try:
             # Loop to handle sequential tool calls
@@ -315,7 +370,7 @@ if prompt := st.chat_input("Hỏi tôi bất cứ điều gì về dữ liệu..
                     
                     if function_name == "query_database":
                         sql_query = function_args["sql"]
-                        with st.expander("⚒️ Truy vấn SQL"):
+                        with st.expander("Executed SQL"):
                             st.code(sql_query, language="sql")
                         
                         result_text = query_database(sql_query)
@@ -354,15 +409,15 @@ if prompt := st.chat_input("Hỏi tôi bất cứ điều gì về dữ liệu..
 
 # Sidebar footer
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 💡 Mẹo nhỏ")
+st.sidebar.title("Hướng dẫn vận hành")
 st.sidebar.markdown("""
-- Đặt câu hỏi bằng tiếng Việt tự nhiên
-- Yêu cầu vẽ biểu đồ hoặc biểu diễn dữ liệu
-- AI sẽ tự động tạo mã SQL và truy vấn
-- Tất cả truy vấn đều là Read-only (chỉ đọc) để đảm bảo an toàn
+- Đặt câu hỏi bằng ngôn ngữ tự nhiên
+- Tự động hóa hình ảnh dữ liệu
+- Tự động tạo truy vấn SQL chuẩn
+- Lớp truy cập dữ liệu chỉ đọc (an toàn)
 """)
 
 # Clear chat button
-if st.sidebar.button("🗑️ Xóa lịch sử trò chuyện"):
+if st.sidebar.button("Bắt đầu lại: Xóa lịch sử"):
     st.session_state.messages = []
     st.rerun()
