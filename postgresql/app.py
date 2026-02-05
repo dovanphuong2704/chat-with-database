@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import altair as alt
 import os
+import json
 from typing import Optional
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -31,6 +32,8 @@ if "available_models" not in st.session_state:
     st.session_state.available_models = [] # Start empty
 if "openai_client" not in st.session_state:
     st.session_state.openai_client = None
+if "query_history" not in st.session_state:
+    st.session_state.query_history = []
 
 # Helper function to fetch models based on provider
 def fetch_available_models(provider, api_key):
@@ -149,6 +152,19 @@ else:
     st.session_state.openai_client = None
 
 # Main area
+# Query History in Sidebar
+if st.session_state.query_history:
+    st.sidebar.markdown("---")
+    st.sidebar.title("🕒 Lịch sử Query")
+    
+    # Show last 10 queries
+    for i, q in enumerate(reversed(st.session_state.query_history[-10:])):
+        with st.sidebar.expander(f"{q['timestamp']} - {q['rows']} dòng"):
+            st.code(q['sql'], language="sql")
+            if st.button("🔄 Chạy lại", key=f"rerun_{len(st.session_state.query_history)-i}"):
+                st.session_state.messages.append({"role": "user", "content": f"Hãy chạy lại query này giúp tôi:\n```sql\n{q['sql']}\n```"})
+                st.rerun()
+
 st.title("AI Data Intelligence Platform")
 st.markdown("Khai thác sức mạnh dữ liệu của bạn thông qua ngôn ngữ tự nhiên. Hệ thống sẽ tự động phân tích và trực quan hóa kết quả cho bạn.")
 
@@ -181,6 +197,14 @@ def query_database(sql: str) -> str:
         
         # Store in session state for chart generation
         st.session_state.last_df = df
+        
+        # Add to query history
+        from datetime import datetime
+        st.session_state.query_history.append({
+            "sql": sql,
+            "timestamp": datetime.now().strftime("%H:%M:%S"),
+            "rows": len(df)
+        })
         
         return DatabaseClient.describe_dataframe_for_llm(df)
     except Exception as e:
@@ -298,12 +322,55 @@ for message in st.session_state.messages:
         
         # Display SQL query if present in history
         if "sql_query" in message:
-            with st.expander("SQL Query"):
-                st.code(message["sql_query"], language="sql")
+            with st.expander("🛠️ SQL Query"):
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    st.code(message["sql_query"], language="sql")
+                with col2:
+                    if st.button("📋 Copy", key=f"copy_sql_{id(message)}", help="Copy SQL to clipboard"):
+                        st.write("")  # Streamlit auto-copies from code block when clicked
         
         # Display Dataframe from history
         if "data" in message:
-            st.dataframe(pd.DataFrame(message["data"]), use_container_width=True)
+            df_data = pd.DataFrame(message["data"])
+            st.dataframe(df_data, use_container_width=True)
+            
+            # Add download buttons (multiple formats)
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                csv_data = df_data.to_csv(index=False).encode('utf-8')
+                st.download_button(
+                    label="📥 CSV",
+                    data=csv_data,
+                    file_name=f"data_export.csv",
+                    mime='text/csv',
+                    key=f"csv_history_{id(message)}"
+                )
+            
+            with col2:
+                # Excel export
+                from io import BytesIO
+                buffer = BytesIO()
+                df_data.to_excel(buffer, index=False, engine='openpyxl')
+                excel_data = buffer.getvalue()
+                st.download_button(
+                    label="📊 Excel",
+                    data=excel_data,
+                    file_name=f"data_export.xlsx",
+                    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    key=f"excel_history_{id(message)}"
+                )
+            
+            with col3:
+                json_data = df_data.to_json(orient='records', indent=2).encode('utf-8')
+                st.download_button(
+                    label="📄 JSON",
+                    data=json_data,
+                    file_name=f"data_export.json",
+                    mime='application/json',
+                    key=f"json_history_{id(message)}"
+                )
             
         # Display Chart from history
         if "chart_code" in message:
@@ -517,71 +584,196 @@ if prompt := st.chat_input("Hỏi tôi bất cứ điều gì về dữ liệu..
                     if key in st.session_state: del st.session_state[key]
 
             else:
-                # OpenAI / Grok Logic
+                # OpenAI / Grok Logic with FALLBACK
+                use_tools = True
+                
                 while True:
-                    response = st.session_state.openai_client.chat.completions.create(
-                        model=model,
-                        messages=st.session_state.messages,
-                        tools=tools,
-                        tool_choice="auto"
-                    )
-                    
-                    response_message = response.choices[0].message
-                    
-                    if not response_message.tool_calls:
+                    try:
+                        # Prepare API call parameters
+                        api_params = {
+                            "model": model,
+                            "messages": st.session_state.messages,
+                        }
+                        
+                        # Only add tools if supported
+                        if use_tools:
+                            api_params["tools"] = tools
+                            api_params["tool_choice"] = "auto"
+                        
+                        response = st.session_state.openai_client.chat.completions.create(**api_params)
+                        
+                        response_message = response.choices[0].message
+                        
+                        # Handle tool calls (if model supports it)
+                        if response_message.tool_calls:
+                            # Convert to dict to avoid "not subscriptable" error
+                            msg_dict = {
+                                "role": "assistant",
+                                "content": response_message.content,
+                                "tool_calls": response_message.tool_calls
+                            }
+                            st.session_state.messages.append(msg_dict)
+                            
+                            for tool_call in response_message.tool_calls:
+                                function_name = tool_call.function.name
+                                function_args = json.loads(tool_call.function.arguments)
+                                
+                                if function_name == "query_database":
+                                    sql_query = function_args["sql"]
+                                    with st.expander("🛠️ Executed SQL"):
+                                        st.code(sql_query, language="sql")
+                                    
+                                    result_text = query_database(sql_query)
+                                    
+                                    if "last_df" in st.session_state:
+                                        df = st.session_state.last_df
+                                        st.dataframe(df, use_container_width=True)
+                                        
+                                        # Add download buttons (multiple formats)
+                                        col1, col2, col3 = st.columns(3)
+                                        
+                                        with col1:
+                                            csv_data = df.to_csv(index=False).encode('utf-8')
+                                            st.download_button(
+                                                label="📥 CSV",
+                                                data=csv_data,
+                                                file_name=f"query_result.csv",
+                                                mime='text/csv',
+                                                key=f"csv_new_{id(df)}"
+                                            )
+                                        
+                                        with col2:
+                                            from io import BytesIO
+                                            buffer = BytesIO()
+                                            df.to_excel(buffer, index=False, engine='openpyxl')
+                                            excel_data = buffer.getvalue()
+                                            st.download_button(
+                                                label="📊 Excel",
+                                                data=excel_data,
+                                                file_name=f"query_result.xlsx",
+                                                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                                key=f"excel_new_{id(df)}"
+                                            )
+                                        
+                                        with col3:
+                                            json_data = df.to_json(orient='records', indent=2).encode('utf-8')
+                                            st.download_button(
+                                                label="📄 JSON",
+                                                data=json_data,
+                                                file_name=f"query_result.json",
+                                                mime='application/json',
+                                                key=f"json_new_{id(df)}"
+                                            )
+                                        
+                                        st.session_state.current_sql = sql_query
+                                        st.session_state.current_data = df.to_dict('records')
+                                    
+                                    st.session_state.messages.append({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call.id,
+                                        "name": function_name,
+                                        "content": result_text
+                                    })
+                                
+                                elif function_name == "create_chart":
+                                    python_code = function_args["python_code"]
+                                    result_text = create_chart(python_code)
+                                    
+                                    if "last_chart" in st.session_state:
+                                        st.altair_chart(st.session_state.last_chart, use_container_width=True)
+                                        st.session_state.current_chart = python_code
+                                    
+                                    st.session_state.messages.append({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call.id,
+                                        "name": function_name,
+                                        "content": result_text
+                                    })
+                            continue  # Loop to get next response
+                        
+                        # No tool calls - display final response
                         assistant_content = response_message.content or ""
+                        
+                        # FALLBACK: Try to extract and execute SQL from text
+                        if not use_tools:
+                            extracted_sql = DatabaseClient.extract_sql(assistant_content)
+                            if extracted_sql:
+                                with st.expander("🛠️ Detected & Executing SQL"):
+                                    st.code(extracted_sql, language="sql")
+                                
+                                try:
+                                    result_text = query_database(extracted_sql)
+                                    if "last_df" in st.session_state:
+                                        df = st.session_state.last_df
+                                        st.dataframe(df, use_container_width=True)
+                                        
+                                        # Add download buttons (multiple formats)
+                                        col1, col2, col3 = st.columns(3)
+                                        
+                                        with col1:
+                                            csv_data = df.to_csv(index=False).encode('utf-8')
+                                            st.download_button(
+                                                label="📥 CSV",
+                                                data=csv_data,
+                                                file_name=f"query_result.csv",
+                                                mime='text/csv',
+                                                key=f"csv_fallback_{id(df)}"
+                                            )
+                                        
+                                        with col2:
+                                            from io import BytesIO
+                                            buffer = BytesIO()
+                                            df.to_excel(buffer, index=False, engine='openpyxl')
+                                            excel_data = buffer.getvalue()
+                                            st.download_button(
+                                                label="📊 Excel",
+                                                data=excel_data,
+                                                file_name=f"query_result.xlsx",
+                                                mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                                                key=f"excel_fallback_{id(df)}"
+                                            )
+                                        
+                                        with col3:
+                                            json_data = df.to_json(orient='records', indent=2).encode('utf-8')
+                                            st.download_button(
+                                                label="📄 JSON",
+                                                data=json_data,
+                                                file_name=f"query_result.json",
+                                                mime='application/json',
+                                                key=f"json_fallback_{id(df)}"
+                                            )
+
+                                        
+                                        st.session_state.current_sql = extracted_sql
+                                        st.session_state.current_data = df.to_dict('records')
+                                except Exception as sql_err:
+                                    st.error(f"Lỗi khi chạy SQL: {sql_err}")
+                        
                         message_placeholder.markdown(assistant_content)
                         
                         final_assistant_msg = {"role": "assistant", "content": assistant_content}
-                        if "current_sql" in st.session_state: final_assistant_msg["sql_query"] = st.session_state.current_sql
-                        if "current_data" in st.session_state: final_assistant_msg["data"] = st.session_state.current_data
-                        if "current_chart" in st.session_state: final_assistant_msg["chart_code"] = st.session_state.current_chart
+                        if "current_sql" in st.session_state: 
+                            final_assistant_msg["sql_query"] = st.session_state.current_sql
+                        if "current_data" in st.session_state: 
+                            final_assistant_msg["data"] = st.session_state.current_data
+                        if "current_chart" in st.session_state: 
+                            final_assistant_msg["chart_code"] = st.session_state.current_chart
                         st.session_state.messages.append(final_assistant_msg)
                         
                         for key in ["current_sql", "current_data", "current_chart"]:
                             if key in st.session_state: del st.session_state[key]
                         break
-                    
-                    st.session_state.messages.append(response_message)
-                    
-                    for tool_call in response_message.tool_calls:
-                        function_name = tool_call.function.name
-                        function_args = json.loads(tool_call.function.arguments)
                         
-                        if function_name == "query_database":
-                            sql_query = function_args["sql"]
-                            with st.expander("Executed SQL"):
-                                st.code(sql_query, language="sql")
-                            
-                            result_text = query_database(sql_query)
-                            
-                            if "last_df" in st.session_state:
-                                df = st.session_state.last_df
-                                st.dataframe(df, use_container_width=True)
-                                st.session_state.current_sql = sql_query
-                                st.session_state.current_data = df.to_dict('records')
-                            
-                            st.session_state.messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": function_name,
-                                "content": result_text
-                            })
-                        
-                        elif function_name == "create_chart":
-                            python_code = function_args["python_code"]
-                            result_text = create_chart(python_code)
-                            
-                            if "last_chart" in st.session_state:
-                                st.altair_chart(st.session_state.last_chart, use_container_width=True)
-                                st.session_state.current_chart = python_code
-                            
-                            st.session_state.messages.append({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "name": function_name,
-                                "content": result_text
-                            })
+                    except Exception as e:
+                        error_msg = str(e).lower()
+                        # Detect "tools not supported" error
+                        if ("tools" in error_msg or "404" in error_msg or "not supported" in error_msg) and use_tools:
+                            st.warning("⚠️ Model này không hỗ trợ Function Calling. Đang chuyển sang chế độ phân tích văn bản...")
+                            use_tools = False
+                            continue  # Retry without tools
+                        else:
+                            # Other errors - re-raise
+                            raise e
         except Exception as e:
             st.error(f"Error: {str(e)}")
             message_placeholder.markdown(f"❌ Error: {str(e)}")

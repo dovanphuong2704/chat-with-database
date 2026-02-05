@@ -6,3 +6,4 @@ openai
 google-generativeai
 anthropic
 psycopg2-binary
+openpyxl
