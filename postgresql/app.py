@@ -312,6 +312,10 @@ for message in st.session_state.messages:
     if message["role"] == "tool":
         continue
     
+    # Hide fallback instruction messages from UI
+    if message["role"] == "user" and "viết TRỰC TIẾP câu lệnh SQL" in message.get("content", ""):
+        continue
+    
     # Skip assistant messages with tool_calls (internal only)
     if message["role"] == "assistant" and "tool_calls" in message:
         continue
@@ -769,7 +773,14 @@ if prompt := st.chat_input("Hỏi tôi bất cứ điều gì về dữ liệu..
                         # Detect "tools not supported" error
                         if ("tools" in error_msg or "404" in error_msg or "not supported" in error_msg) and use_tools:
                             st.warning("⚠️ Model này không hỗ trợ Function Calling. Đang chuyển sang chế độ phân tích văn bản...")
+                            message_placeholder.markdown("🔄 Đang thử lại với chế độ văn bản (Fallback)...")
                             use_tools = False
+                            
+                            # Force model to output SQL code directly (Use 'user' role for better compatibility)
+                            st.session_state.messages.append({
+                                "role": "user", 
+                                "content": "Hệ thống tool function calling không khả dụng. Vui lòng viết TRỰC TIẾP câu lệnh SQL vào trong block code (```sql ... ```) để tôi có thể trích xuất và thực thi. Đừng chỉ mô tả."
+                            })
                             continue  # Retry without tools
                         else:
                             # Other errors - re-raise
