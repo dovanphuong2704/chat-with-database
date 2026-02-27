@@ -162,9 +162,38 @@ section[data-testid="stSidebar"] [data-testid="stExpanderContent"] .stButton > b
     box-shadow: 0 2px 8px rgba(30,64,175,0.15) !important;
 }
 
-/* ---- Inputs ---- */
-.stTextInput > div > div > input { border-radius: 8px !important; }
-.stSelectbox > div { border-radius: 8px !important; }
+/* ---- Inputs — force light ---- */
+.stTextInput > div > div > input,
+.stTextArea > div > div > textarea,
+.stNumberInput > div > div > input {
+    border-radius: 8px !important;
+    background-color: #ffffff !important;
+    color: #1e293b !important;
+    border: 1px solid #cbd5e1 !important;
+}
+.stTextInput > div > div > input::placeholder,
+.stTextArea > div > div > textarea::placeholder {
+    color: #94a3b8 !important;
+}
+.stSelectbox > div > div,
+.stSelectbox > div > div > div {
+    border-radius: 8px !important;
+    background-color: #ffffff !important;
+    color: #1e293b !important;
+}
+/* Selectbox dropdown list */
+[data-baseweb="select"] > div,
+[data-baseweb="popover"] ul {
+    background-color: #ffffff !important;
+    color: #1e293b !important;
+}
+/* Multiselect tags */
+[data-baseweb="tag"] {
+    background-color: #eff6ff !important;
+    color: #1e40af !important;
+}
+/* Password input eye icon */
+.stTextInput button { color: #64748b !important; }
 
 /* ---- Dataframe ---- */
 .stDataFrame { border-radius: 8px !important; overflow: hidden !important; }
