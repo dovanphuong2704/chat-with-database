@@ -101,9 +101,9 @@ class AppDBManager:
     
     def create_user(self, username, email, password):
         if self.session.query(User).filter_by(username=username).first():
-            return False, "Username already exists"
+            return False, "Tên đăng nhập đã tồn tại"
         if self.session.query(User).filter_by(email=email).first():
-            return False, "Email already exists"
+            return False, "Email này đã được sử dụng"
             
         hashed = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt())
         new_user = User(
@@ -114,6 +114,19 @@ class AppDBManager:
         self.session.add(new_user)
         self.session.commit()
         return True, new_user.id
+
+    def reset_password_by_auth(self, username, email, new_password):
+        """Reset password if both username and email match the database"""
+        user = self.session.query(User).filter_by(username=username, email=email).first()
+        if not user:
+            return False, "Tên đăng nhập hoặc Email không khớp"
+        
+        if len(new_password) < 6:
+            return False, "Mật khẩu mới phải có ít nhất 6 ký tự"
+            
+        user.password_hash = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+        self.session.commit()
+        return True, "Cấp lại mật khẩu thành công"
 
     def verify_user(self, username, password):
         user = self.session.query(User).filter_by(username=username).first()
@@ -211,6 +224,12 @@ class AppDBManager:
 
     def save_api_key(self, user_id, profile_name, provider, api_key, is_default=False, key_id=None):
         """Save or update an API key"""
+        # Check duplicate
+        existing_keys = self.get_api_keys(user_id)
+        for k in existing_keys:
+            if k['api_key'] == api_key and str(k['id']) != str(key_id):
+                return False, f"API Key này đã tồn tại với tên: {k['profile_name']}"
+
         if key_id:
             rec = self.session.query(APIKey).filter_by(id=key_id, user_id=user_id).first()
         else:
@@ -234,7 +253,7 @@ class AppDBManager:
             ).update({'is_default': False})
         
         self.session.commit()
-        return rec.id
+        return True, "Lưu thành công"
 
     def delete_api_key(self, key_id, user_id):
         """Delete an API key"""
