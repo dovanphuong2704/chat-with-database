@@ -211,7 +211,8 @@ class DatabaseClient:
         SELECT table_name, column_name, data_type
         FROM information_schema.columns
         WHERE table_schema = 'public'
-        ORDER BY table_name, ordinal_position;
+        ORDER BY table_name, ordinal_position
+        LIMIT 50;
         """
         res = self.query(sql, limit=None)
         schema: Dict[str, List[str]] = {}
@@ -220,8 +221,15 @@ class DatabaseClient:
 
         lines = ["Database structure:"]
         for table, cols in schema.items():
-            lines.append(f"- {table}: {', '.join(cols)}")
-        return "\n".join(lines)
+            # Truncate column list to avoid huge schemas
+            cols_display = cols[:8] if len(cols) > 8 else cols
+            if len(cols) > 8:
+                cols_display.append(f"... +{len(cols)-8} more columns")
+            lines.append(f"- {table}: {', '.join(cols_display)}")
+            
+        # Truncate overall output
+        result = "\n".join(lines)
+        return result[:2000]  # Hard limit on schema length
 
     def query(
         self,

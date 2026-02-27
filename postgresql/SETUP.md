@@ -1,45 +1,84 @@
-# 🚀 Hướng dẫn chạy Streamlit Web App
+# Hướng dẫn cài đặt chi tiết
 
 ## Yêu cầu hệ thống
 
-- Python 3.8 trở lên
-- Kết nối internet (để gọi OpenAI API)
-- PostgreSQL database (hoặc dùng database có sẵn của bạn)
+- Python 3.10 trở lên
+- PostgreSQL 13 trở lên
+- Kết nối internet để gọi AI API
+
+---
 
 ## Bước 1: Cài đặt Python
 
-Nếu chưa có Python, tải và cài đặt từ: https://www.python.org/downloads/
+Tải và cài đặt từ https://www.python.org/downloads/
 
-**Lưu ý:** Khi cài đặt, nhớ check ✅ "Add Python to PATH"
+> Khi cài trên Windows, nhớ check **"Add Python to PATH"**
 
-## Bước 2: Cài đặt dependencies
+Kiểm tra:
+```bash
+python --version
+```
 
-Mở PowerShell hoặc Command Prompt, chạy:
+---
+
+## Bước 2: Cài đặt thư viện
+
+### Cách nhanh (dùng script tự động)
 
 ```bash
-cd d:\Phuong\workspace\chat-with-your-database\postgresql
+cd postgresql
+chmod +x setup.sh
+./setup.sh
+```
+
+Script sẽ tự tạo virtual environment và cài tất cả thư viện.
+
+### Cách thủ công
+
+```bash
+cd postgresql
+python -m venv venv
+
+# Kích hoạt venv
+source venv/bin/activate        # Linux / Mac
+source venv/Scripts/activate    # Windows Git Bash
+venv\Scripts\activate.bat       # Windows CMD
+
 pip install -r requirements.txt
 ```
 
-## Bước 3: Cấu hình
+---
 
-File `env` đã được cấu hình sẵn với:
-- Database connection của bạn
-- OpenAI API key
+## Bước 3: Cấu hình file `.env`
 
-Nếu cần thay đổi, chỉnh sửa file `env`:
+Sao chép file mẫu:
+
+```bash
+cp env.example .env
+```
+
+Mở file `.env` và điền thông tin:
 
 ```env
-# Database connection
-DB_HOST=103.118.28.2
+# PostgreSQL — database bạn muốn chat
+DB_HOST=localhost
 DB_PORT=5432
-DB_DATABASE=gionglamnghiep
-DB_USER=postgres
-DB_PASSWORD=AppraisalQuail1Agent
+DB_DATABASE=your_database
+DB_USER=your_user
+DB_PASSWORD=your_password
 
-# OpenAI API
-OPENAI_API_KEY=your-api-key-here
+# Database lưu thông tin user/config của app
+APP_DB_URL=sqlite:///app.db
+
+# Khoá mã hoá API keys và mật khẩu DB
+# Tạo bằng lệnh:
+# python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+ENCRYPTION_KEY=your_generated_key
 ```
+
+> **Lưu ý:** Không commit file `.env` lên Git. File `.gitignore` đã được cấu hình để bỏ qua nó.
+
+---
 
 ## Bước 4: Chạy ứng dụng
 
@@ -47,102 +86,66 @@ OPENAI_API_KEY=your-api-key-here
 streamlit run app.py
 ```
 
-App sẽ tự động mở tại: **http://localhost:8501**
+Mở trình duyệt tại **http://localhost:8501**
 
-## Cách sử dụng
+---
 
-### 1. Kết nối Database (Sidebar)
+## Bước 5: Thiết lập lần đầu
 
-- Thông tin database đã được điền sẵn từ file `env`
-- Click **"🔌 Connect to Database"**
-- Nếu kết nối thành công, bạn sẽ thấy ✅ và database schema
+### 1. Tạo tài khoản
+- Chọn tab **Tạo tài khoản** ở màn hình đăng nhập
+- Nhập tên đăng nhập, email, mật khẩu (tối thiểu 6 ký tự)
 
-### 2. Chat với Database
+### 2. Thêm kết nối Database
+- Vào **Cài đặt → Database**
+- Nhập thông tin kết nối PostgreSQL → **Lưu & Kết nối**
 
-Ví dụ các câu hỏi bạn có thể hỏi:
+### 3. Thêm API Key
+- Vào **Cài đặt → API Key & Model**
+- Chọn provider (OpenAI / Grok / Gemini / Claude)
+- Dán API key vào → **Lưu**
 
-```
-- How many tables are in the database?
-- Show me the first 10 rows from [table_name]
-- What are the column names in [table_name]?
-- Count the number of records in [table_name]
-- Create a bar chart showing the distribution of [column_name]
-```
+### 4. Bắt đầu chat
+- Quay lại trang **Chat**
+- Sidebar → chọn Database và API Key → **Kết nối DB** → **Lấy Model**
+- Gõ câu hỏi bằng tiếng Việt
 
-### 3. Xem SQL Query
-
-- Mỗi khi AI generate SQL, nó sẽ hiển thị trong expander **"⚒️ SQL Query"**
-- Click để xem câu SQL được thực thi
-
-### 4. Xem kết quả
-
-- Kết quả query hiển thị dưới dạng bảng (DataFrame)
-- Nếu yêu cầu chart, sẽ hiển thị biểu đồ Altair
-
-## Tính năng
-
-✅ Chat interface với AI  
-✅ Tự động generate SQL queries  
-✅ Hiển thị kết quả dạng bảng  
-✅ Tạo biểu đồ tự động  
-✅ Read-only queries (an toàn)  
-✅ Session state lưu lịch sử chat  
-✅ Form config database linh hoạt  
+---
 
 ## Troubleshooting
 
-### Lỗi: "Python not found"
-- Cài đặt Python từ python.org
-- Đảm bảo đã check "Add to PATH" khi cài
+### Lỗi kết nối Database
+- Kiểm tra PostgreSQL đang chạy
+- Kiểm tra host, port, username, password
+- Kiểm tra firewall / network cho phép kết nối
 
-### Lỗi: "pip not found"
+### Lỗi "Missing environment variables"
+- Đảm bảo file `.env` tồn tại và đã điền đủ `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USER`, `DB_PASSWORD`
+
+### Lỗi module not found
 ```bash
-python -m pip install -r requirements.txt
+pip install -r requirements.txt
 ```
 
-### Lỗi: "OpenAI API key not found"
-- Kiểm tra file `env` có OPENAI_API_KEY chưa
-- Hoặc nhập trực tiếp vào sidebar
+### Lỗi ENCRYPTION_KEY
+Tạo khoá mới:
+```bash
+python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
+Dán kết quả vào `ENCRYPTION_KEY=` trong file `.env`
 
-### Lỗi: "Database connection failed"
-- Kiểm tra database có đang chạy không
-- Kiểm tra thông tin kết nối (host, port, user, password)
-- Kiểm tra firewall/network
+### Model không hỗ trợ Function Calling
+App sẽ tự động chuyển sang chế độ fallback — trích xuất SQL trực tiếp từ văn bản.
+
+---
 
 ## Tech Stack
 
-- **Streamlit** - Web framework
-- **OpenAI API** - LLM (GPT-4/GPT-3.5)
-- **PostgreSQL** - Database
-- **pandas** - Data processing
-- **Altair** - Visualization
-- **psycopg** - PostgreSQL driver
-
-## Lưu ý bảo mật
-
-⚠️ **QUAN TRỌNG:**
-- File `env` chứa thông tin nhạy cảm (passwords, API keys)
-- **KHÔNG** commit file này lên Git
-- File `.gitignore` đã được cấu hình để ignore `env`
-
-## Tùy chỉnh
-
-### Thay đổi OpenAI model
-
-Trong sidebar, chọn model:
-- `gpt-4o-mini` (rẻ, nhanh)
-- `gpt-4o` (mạnh nhất)
-- `gpt-3.5-turbo` (cân bằng)
-
-### Clear chat history
-
-Click button **"🗑️ Clear Chat History"** ở sidebar
-
-## Deploy lên Cloud (Optional)
-
-Bạn có thể deploy app lên:
-- **Streamlit Cloud** (miễn phí): https://streamlit.io/cloud
-- **Heroku**
-- **AWS/GCP/Azure**
-
-Hướng dẫn deploy: https://docs.streamlit.io/streamlit-community-cloud/deploy-your-app
+| Thành phần | Công nghệ |
+|------------|-----------|
+| Web UI | Streamlit |
+| AI Providers | OpenAI · Grok (xAI) · Google Gemini · Anthropic Claude |
+| Database | PostgreSQL (psycopg v3) |
+| App DB | SQLite / PostgreSQL (SQLAlchemy) |
+| Visualisation | Altair |
+| Bảo mật | bcrypt · Fernet (AES-128-CBC) |

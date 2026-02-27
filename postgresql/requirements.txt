@@ -1,9 +1,14 @@
 streamlit
 pandas
 altair
+numpy
 python-dotenv
 openai
 google-generativeai
 anthropic
+psycopg[binary,pool]
 psycopg2-binary
+sqlalchemy
+cryptography
+bcrypt
 openpyxl

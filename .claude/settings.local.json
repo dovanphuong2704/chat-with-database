@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "WebSearch",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:sqlchat.ai)",
+      "WebFetch(domain:www.bytebase.com)",
+      "WebFetch(domain:mindsdb.com)",
+      "WebFetch(domain:chat2db.ai)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:vanna.ai)",
+      "WebFetch(domain:dataherald.readthedocs.io)"
+    ]
+  }
+}
