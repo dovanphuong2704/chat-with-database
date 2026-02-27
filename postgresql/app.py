@@ -276,7 +276,7 @@ if st.session_state.user_id is None:
         """, unsafe_allow_html=True)
         st.markdown("<br>", unsafe_allow_html=True)
 
-        t_login, t_register, t_reset = st.tabs(["Đăng nhập", "Tạo tài khoản", "Quên mật khẩu"])
+        t_login, t_register = st.tabs(["Đăng nhập", "Tạo tài khoản"])
 
         with t_login:
             with st.form("login_form"):
@@ -313,26 +313,6 @@ if st.session_state.user_id is None:
                             st.error(msg)
                     except Exception as e:
                         st.error(f"Lỗi hệ thống: {str(e)}")
-
-        with t_reset:
-            with st.form("reset_form"):
-                st.info("💡 Khôi phục mật khẩu thông qua Tên đăng nhập & Email")
-                f_user  = st.text_input("Tên đăng nhập")
-                f_email = st.text_input("Email đã đăng ký")
-                f_npass = st.text_input("Mật khẩu mới", type="password", placeholder="Tối thiểu 6 ký tự")
-                f_cpass = st.text_input("Xác nhận mật khẩu mới", type="password")
-                submitted_f = st.form_submit_button("Đặt lại mật khẩu", use_container_width=True)
-            if submitted_f:
-                if not f_user or not f_email or not f_npass:
-                    st.error("Vui lòng nhập đầy đủ thông tin")
-                elif f_npass != f_cpass:
-                    st.error("Mật khẩu không khớp!")
-                else:
-                    success, msg = st.session_state.app_db.reset_password_by_auth(f_user, f_email, f_npass)
-                    if success:
-                        st.success("✅ Cấp lại mật khẩu thành công! Hãy đăng nhập bằng mật khẩu mới.")
-                    else:
-                        st.error(f"❌ {msg}")
     st.stop()
 
 # ============================================================
