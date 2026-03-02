@@ -383,6 +383,11 @@ AI: ... (kết quả) ...
 
 def fetch_available_models(provider, api_key):
     try:
+        if not api_key or not api_key.strip():
+            st.error("API Key rỗng hoặc không thể giải mã. Vui lòng xoá và thêm lại API Key.")
+            return []
+            
+        api_key = api_key.strip()
         if provider in ("OpenAI", "Grok (xAI)"):
             base_url = "https://api.x.ai/v1" if provider == "Grok (xAI)" else None
             temp_client = OpenAI(api_key=api_key, base_url=base_url)
@@ -408,7 +413,7 @@ def fetch_available_models(provider, api_key):
             ])
         return []
     except Exception as e:
-        st.error(f"Lỗi lấy danh sách model: {e}")
+        st.error(f"Lỗi kết nối / xác thực API: {e}")
         return []
 
 
@@ -589,18 +594,21 @@ with st.sidebar.expander("⚡ Kết nối nhanh", expanded=(not _db_ok or not _a
         )
         _sel_conn = next((c for c in _saved_conns if c["profile_name"] == _sel_name), None)
         if st.button("Kết nối DB", key="sidebar_connect_db", use_container_width=True):
-            try:
-                os.environ["DB_HOST"]     = _sel_conn["db_host"]
-                os.environ["DB_PORT"]     = _sel_conn["db_port"]
-                os.environ["DB_DATABASE"] = _sel_conn["db_name"]
-                os.environ["DB_USER"]     = _sel_conn["db_user"]
-                os.environ["DB_PASSWORD"] = _sel_conn["db_password"]
-                st.session_state.db_client = DatabaseClient()
-                st.session_state.db_schema = st.session_state.db_client.get_schema_summary()
-                st.success("Đã kết nối!")
-                st.rerun()
-            except Exception as e:
-                st.error(f"Lỗi: {e}")
+            if not _sel_conn.get("db_host"):
+                st.error("Lỗi: Không thể kết nối. Cấu hình DB bị rớt hoặc lỗi mã hoá.")
+            else:
+                try:
+                    os.environ["DB_HOST"]     = _sel_conn["db_host"]
+                    os.environ["DB_PORT"]     = _sel_conn["db_port"]
+                    os.environ["DB_DATABASE"] = _sel_conn["db_name"]
+                    os.environ["DB_USER"]     = _sel_conn["db_user"]
+                    os.environ["DB_PASSWORD"] = _sel_conn["db_password"]
+                    st.session_state.db_client = DatabaseClient()
+                    st.session_state.db_schema = st.session_state.db_client.get_schema_summary()
+                    st.success("Đã kết nối!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Lỗi: {e}")
     else:
         st.caption("Chưa có DB. Vào Cài đặt để thêm.")
 
@@ -738,18 +746,21 @@ if st.session_state.current_page == "settings":
                             st.caption(f"{conn['db_user']}@{conn['db_host']}:{conn['db_port']}/{conn['db_name']}")
                         with cb:
                             if st.button("Kết nối", key=f"conn_{conn['id']}"):
-                                try:
-                                    os.environ["DB_HOST"]     = conn["db_host"]
-                                    os.environ["DB_PORT"]     = conn["db_port"]
-                                    os.environ["DB_DATABASE"] = conn["db_name"]
-                                    os.environ["DB_USER"]     = conn["db_user"]
-                                    os.environ["DB_PASSWORD"] = conn["db_password"]
-                                    st.session_state.db_client = DatabaseClient()
-                                    st.session_state.db_schema = st.session_state.db_client.get_schema_summary()
-                                    st.success("Đã kết nối!")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Lỗi: {e}")
+                                if not conn.get("db_host"):
+                                    st.error("Lỗi: Không thể kết nối. Cấu hình DB bị rớt hoặc lỗi mã hoá.")
+                                else:
+                                    try:
+                                        os.environ["DB_HOST"]     = conn["db_host"]
+                                        os.environ["DB_PORT"]     = conn["db_port"]
+                                        os.environ["DB_DATABASE"] = conn["db_name"]
+                                        os.environ["DB_USER"]     = conn["db_user"]
+                                        os.environ["DB_PASSWORD"] = conn["db_password"]
+                                        st.session_state.db_client = DatabaseClient()
+                                        st.session_state.db_schema = st.session_state.db_client.get_schema_summary()
+                                        st.success("Đã kết nối!")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Lỗi: {e}")
                         with cc:
                             if st.button("Xoá", key=f"del_conn_{conn['id']}"):
                                 st.session_state.app_db.delete_db_connection(conn["id"], st.session_state.user_id)

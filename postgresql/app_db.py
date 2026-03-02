@@ -158,10 +158,15 @@ class AppDBManager:
         conns = self.session.query(DBConnection).filter_by(user_id=user_id).all()
         result = []
         for c in conns:
+            decrypted_host = self.decrypt(c.db_host)
+            prof_name = c.profile_name or 'Mặc định'
+            if c.db_host and not decrypted_host:
+                prof_name += " (Lỗi giải mã)"
+                
             result.append({
                 'id': c.id,
-                'profile_name': c.profile_name or 'Mặc định',
-                'db_host': self.decrypt(c.db_host) or '',
+                'profile_name': prof_name,
+                'db_host': decrypted_host or '',
                 'db_port': self.decrypt(c.db_port) or '',
                 'db_name': self.decrypt(c.db_name) or '',
                 'db_user': self.decrypt(c.db_user) or '',
@@ -213,11 +218,16 @@ class AppDBManager:
         keys = self.session.query(APIKey).filter_by(user_id=user_id).all()
         result = []
         for k in keys:
+            decrypted = self.decrypt(k.api_key)
+            prof_name = k.profile_name or 'Mặc định'
+            if k.api_key and not decrypted:
+                prof_name += " (Lỗi giải mã)"
+                
             result.append({
                 'id': k.id,
-                'profile_name': k.profile_name or 'Mặc định',
+                'profile_name': prof_name,
                 'provider': k.provider or '',
-                'api_key': self.decrypt(k.api_key) or '',
+                'api_key': decrypted or '',
                 'is_default': k.is_default or False,
             })
         return result
